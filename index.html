@@ -1,0 +1,299 @@
+
+
+
+
+
+
+
+
+
+
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Flappy Dog</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: linear-gradient(180deg, #8ed0ff 0%, #b8e6ff 60%);
+      font-family: sans-serif;
+    }
+    .wrap {
+      width: 420px;
+      max-width: 95vw;
+      background: rgba(255,255,255,0.9);
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      padding: 12px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    h1 { margin: 0; font-size: 18px; }
+    .controls { font-size: 13px; }
+    canvas {
+      display: block;
+      width: 400px;
+      height: 600px;
+      border-radius: 10px;
+      background: #b8e6ff;
+      margin: 0 auto;
+    }
+    .panel {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .score { font-weight: 700; font-size: 18px; }
+    .small { font-size: 12px; color: #666; }
+    .btn {
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Flappy Dog</h1>
+      <div class="controls">Tap / Click or press <b>Space</b></div>
+    </header>
+
+    <canvas id="game" width="400" height="600"></canvas>
+
+    <div class="panel">
+      <div>
+        <div class="score" id="score">Score: 0</div>
+        <div class="small">Best: <span id="best">0</span></div>
+      </div>
+      <button class="btn" id="restart">Restart</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const bestEl = document.getElementById("best");
+    const restartBtn = document.getElementById("restart");
+
+    const state = {
+      gravity: 900,
+      flapPower: -320,
+      dog: { x: 90, y: 250, vy: 0, radius: 18 },
+      pillars: [],
+      pillarSpeed: 140,
+      spawnTimer: 0,
+      spawnInterval: 1.45,
+      gapSize: 150,
+      running: false,
+      gameOver: false,
+      score: 0,
+      best: Number(localStorage.getItem("flappyDogBest") || 0)
+    };
+    bestEl.textContent = state.best;
+
+    function reset() {
+      state.dog.y = 200;
+      state.dog.vy = 0;
+      state.pillars = [];
+      state.spawnTimer = 0.6;
+      state.score = 0;
+      state.gameOver = false;
+      state.running = true;
+      scoreEl.textContent = "Score: 0";
+    }
+
+    function spawnPillar() {
+      const minTop = 40;
+      const maxTop = canvas.height - state.gapSize - 120;
+      const top = Math.floor(Math.random() * (maxTop - minTop + 1)) + minTop;
+      const w = 60;
+      state.pillars.push({ x: canvas.width + w, top, w, passed: false });
+    }
+
+    function flap() {
+      if (state.gameOver) { reset(); return; }
+      state.dog.vy = state.flapPower;
+      state.running = true;
+    }
+
+    window.addEventListener("keydown", e => {
+      if (e.code === "Space") { e.preventDefault(); flap(); }
+    });
+    canvas.addEventListener("pointerdown", flap);
+    restartBtn.addEventListener("click", reset);
+
+    let last = performance.now();
+    function loop(now) {
+      const dt = Math.min((now - last) / 1000, 0.04);
+      last = now;
+      update(dt);
+      render();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    function update(dt) {
+      if (!state.running || state.gameOver) return;
+
+      state.dog.vy += state.gravity * dt;
+      state.dog.y += state.dog.vy * dt;
+
+      state.spawnTimer -= dt;
+      if (state.spawnTimer <= 0) { spawnPillar(); state.spawnTimer = state.spawnInterval; }
+
+      for (let p of state.pillars) { p.x -= state.pillarSpeed * dt; }
+
+      const dog = state.dog;
+      for (let i = state.pillars.length - 1; i >= 0; i--) {
+        const p = state.pillars[i];
+        if (p.x + p.w < -50) state.pillars.splice(i, 1);
+
+        if (!p.passed && (p.x + p.w) < dog.x) {
+          p.passed = true;
+          state.score++;
+          scoreEl.textContent = "Score: " + state.score;
+          if (state.score > state.best) {
+            state.best = state.score;
+            bestEl.textContent = state.best;
+            localStorage.setItem("flappyDogBest", state.best);
+          }
+        }
+
+        const dogTop = dog.y - dog.radius;
+        const dogBottom = dog.y + dog.radius;
+        const dogLeft = dog.x - dog.radius;
+        const dogRight = dog.x + dog.radius;
+        const pillarLeft = p.x;
+        const pillarRight = p.x + p.w;
+        const gapTop = p.top;
+        const gapBottom = p.top + state.gapSize;
+
+        if (dogRight > pillarLeft && dogLeft < pillarRight) {
+          if (dogTop < gapTop || dogBottom > gapBottom) {
+            state.gameOver = true;
+            state.running = false;
+          }
+        }
+      }
+
+      if (dog.y - dog.radius < 0) { dog.y = dog.radius; dog.vy = 0; }
+      if (dog.y + dog.radius > canvas.height - 20) {
+        dog.y = canvas.height - 20 - dog.radius;
+        state.gameOver = true;
+        state.running = false;
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      for (const p of state.pillars) {
+        ctx.fillStyle = "#1e90ff"; // blue
+        ctx.fillRect(p.x, 0, p.w, p.top);
+        ctx.fillRect(p.x, p.top + state.gapSize, p.w, canvas.height - (p.top + state.gapSize) - 20);
+      }
+
+      ctx.fillStyle = "#6dbb3d";
+      ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+
+      ctx.save();
+      const dog = state.dog;
+      ctx.translate(dog.x, dog.y);
+      const tilt = Math.max(-0.5, Math.min(0.6, dog.vy / 600));
+      ctx.rotate(tilt);
+      ctx.font = (dog.radius*2 + 6) + "px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("🐶", 0, 0);
+      ctx.restore();
+
+      if (!state.running && !state.gameOver) {
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.fillRect(50, 200, 300, 100);
+        ctx.fillStyle = "#333";
+        ctx.textAlign = "center";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("Tap / Click or Press Space to Start", canvas.width/2, 250);
+      }
+      if (state.gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.font = "28px sans-serif";
+        ctx.fillText("Game Over", canvas.width/2, 240);
+        ctx.font = "18px sans-serif";
+        ctx.fillText("Score: " + state.score, canvas.width/2, 280);
+      }
+    }
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
